@@ -17,7 +17,7 @@ class MinMaxLayer(nn.Module):
         top_instances = torch.sort(self.pooling(inputs), descending=True)[0]
         neg_evidence = (-1) * torch.sort(self.pooling(neg_input))[0]
         output = torch.cat((top_instances, neg_evidence), dim=-1)
-        return output.permute(0, 2, 1)
+        return output.squeeze()
 
 
 class ChowderModel(nn.Module):
@@ -52,7 +52,7 @@ class ChowderModel(nn.Module):
         x = self.projector(inputs)
         x = self.minmax(x)
         x = self.mlp(x)
-        return x
+        return x.squeeze()
 
 
 class EnsembleChowder(nn.Module):
@@ -79,7 +79,7 @@ class EnsembleChowder(nn.Module):
         predictions = []
         for m in self.model_list:
             predictions.append(m(inputs))
-        return torch.cat(predictions, dim=-1)
+        return torch.stack(predictions, dim=1)
 
     def predict(self, inputs):
         """
