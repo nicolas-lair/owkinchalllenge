@@ -13,13 +13,24 @@ class MinMaxLayer(nn.Module):
         self.pooling = nn.AdaptiveMaxPool1d(output_size=R)
 
     def forward(self, inputs, lengths=None):
+        """
+
+        :param inputs: tensor of size N, 1000
+        :param lengths: list of size N tracking the number of tiles for each input data
+        :return: tensor of size N, 2*R
+        """
         if lengths is not None:
+            # Split the batch and remove the padded values
             inputs = [inputs[i][:lengths[i]].unsqueeze(0).unsqueeze(0) for i in range(len(lengths))]
             neg_inputs = [(-1) * x for x in inputs]
             output = []
+
+            # Compute top_instance and negative evidence for each data in the batch
             for input_, neg_ in zip(inputs, neg_inputs):
                 top_instance = self.pooling(input_).squeeze()
                 neg_instance = (-1) * self.pooling(neg_).squeeze()
+
+                # Concat, sort and store the top instance and neg evidenve
                 output.append(torch.cat([top_instance, neg_instance]).sort().values)
             return torch.stack(output, dim=0)
         else:
@@ -27,6 +38,13 @@ class MinMaxLayer(nn.Module):
 
 
 class WeldonModel(nn.Module):
+    """
+    This implements the WeldonModel as describes in the paper :
+    CLASSIFICATION AND DISEASE LOCALIZATION IN HISTOPATHOLOGY USING ONLY GLOBAL LABELS : A WEAKLY-SUPERVISED APPROACH
+    https://arxiv.org/pdf/1802.02212.pdf
+
+    It serves as parent class for the chowder model
+    """
     def __init__(self, R=10):
         super().__init__()
         self.projector = nn.Sequential(
@@ -57,6 +75,8 @@ class ChowderModel(WeldonModel):
     Define a Chowder model based on the paper
     CLASSIFICATION AND DISEASE LOCALIZATION IN HISTOPATHOLOGY USING ONLY GLOBAL LABELS : A WEAKLY-SUPERVISED APPROACH
     https://arxiv.org/pdf/1802.02212.pdf
+
+    It is based on the WeldonModel class
     """
 
     def __init__(self, R=10):
@@ -69,10 +89,10 @@ class ChowderModel(WeldonModel):
             # nn.Dropout(0.5),
             nn.Linear(2 * R, 200),
             nn.Sigmoid(),
-            nn.Dropout(0.5),
+            # nn.Dropout(0.5),
             nn.Linear(200, 100),
             nn.Sigmoid(),
-            nn.Dropout(0.5),
+            # nn.Dropout(0.5),
             nn.Linear(100, 1),
             nn.Sigmoid()
         )
@@ -84,7 +104,7 @@ class ChowderModel(WeldonModel):
 
 class EnsembleModel(nn.Module):
     """
-    Ensemble model containing a list of E Chowder models
+    Ensemble model containing a list of E models (Weldon or Chowder)
     """
 
     def __init__(self, model_type, E=10, R=5):
@@ -93,6 +113,7 @@ class EnsembleModel(nn.Module):
         :param E: Number of chowder models
         :param R: init params for ChowderModel
         """
+        assert isinstance(model_type, WeldonModel)
         super().__init__()
         self.model_list = nn.ModuleList(model_type(R=R) for _ in range(E))
 

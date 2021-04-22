@@ -7,7 +7,7 @@ import torch.nn as nn
 from torch.utils.data import random_split
 from sklearn.metrics import roc_auc_score
 
-from baseline import get_params
+from utils import get_params
 from loader import ResNetFeaturesDataset, custom_dataloader
 from model import EnsembleModel, ChowderModel, WeldonModel
 
@@ -32,15 +32,33 @@ parser.add_argument("--epoch", default=30, type=int,
 
 weldon = False
 
+
 def get_model_and_optimizers(**kwargs):
+    """
+    Create model and optimizers
+    :param kwargs: Parameter for EnsembleModel
+    :return:
+    """
     model = EnsembleModel(**kwargs)
     if cuda:
         model.cuda()
     optimizers = [optim.Adam(m.parameters(), lr=0.001) for m in model.model_list]
+    # optimizers = [optim.Adam([{'params': m.projector.parameters(), 'weight_decay': 0.5},
+    #                           {'params': m.mlp.parameters()}
+    #                           ],
+    #                          lr=0.001) for m in model.model_list]
     return model, optimizers
 
 
 def train_on_one_epoch(model, train_dataset, optimizer):
+    """
+    Train the ensemble model on one epoch by training each submodel separately.
+    Different batches are used for each model
+    :param model: EnsembleModel
+    :param train_dataset: dataset containing the training samples and their labels
+    :param optimizer: list of optimizers, one for each submodel
+    :return: nothing, print the mean loss for each submodel
+    """
     for model_, optim_ in zip(model.model_list, optimizer):
         optim_.zero_grad()
         train_loader = custom_dataloader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
@@ -51,7 +69,7 @@ def train_on_one_epoch(model, train_dataset, optimizer):
                 features, labels = features.cuda(), labels.cuda()
             predictions = model_(features)
             loss = loss_fn(predictions, labels.float())
-            loss += torch.norm(torch.cat([x.view(-1) for x in model_.projector.parameters()]), 2)
+            # loss += 0.5 * torch.norm(torch.cat([x.view(-1) for x in model_.projector.parameters()]), 2)
             loss.backward()
             optim_.step()
             losses.append(loss.detach())
@@ -59,6 +77,13 @@ def train_on_one_epoch(model, train_dataset, optimizer):
 
 
 def eval_model(model, val_dataset, name='validation'):
+    """
+    Evaluate the performance of the model on a dataset
+    :param model: EnsembleModel
+    :param val_dataset: dataset containing the validation samples along with their labels
+    :param name: name of the validation (train or validation), used to print the result
+    :return: nothing, print the AUC of the model on the dataset
+    """
     model.eval()
     val_loader = custom_dataloader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=4)
     predictions, labels = [], []
@@ -74,6 +99,7 @@ def eval_model(model, val_dataset, name='validation'):
 
 
 if __name__ == '__main__':
+    # Prepare the simulation
     args = parser.parse_args()
     filenames_train, filenames_test, labels_train, ids_test = get_params(args)
     TrainDataset = ResNetFeaturesDataset(filenames=filenames_train, labels=labels_train)
@@ -82,9 +108,11 @@ if __name__ == '__main__':
                                                                      len(TrainDataset) - int(
                                                                          0.8 * len(TrainDataset))])
 
+    # Create the models
     chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model, R=args.R)
     if weldon:
         weldon_model, weldon_optimizers = get_model_and_optimizers(model_type=WeldonModel, E=args.n_model, R=args.R)
+
     loss_fn = nn.BCELoss()
 
     for e in range(args.epoch):
