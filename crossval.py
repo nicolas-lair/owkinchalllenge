@@ -28,10 +28,10 @@ parser.add_argument("--n_model", default=10, type=int,
                     help="Number of Chowder model in the ensemble model")
 parser.add_argument("--R", default=5, type=int,
                     help="Number of positive and negative evidence")
-parser.add_argument("--epoch", default=3, type=int,
+parser.add_argument("--epoch", default=30, type=int,
                     help="Number of epochs to train")
 
-weldon = False
+verbose = dict(train=False, eval=True)
 
 if __name__ == '__main__':
     # Prepare the simulation
@@ -62,7 +62,8 @@ if __name__ == '__main__':
                                                  optimizers=chowder_optimizers,
                                                  train_loader=train_loader,
                                                  val_loader=test_loader,
-                                                 args=args)
+                                                 args=args,
+                                                 verbose=verbose)
             train_auc[seed].append(train_auc_fold)
             val_auc[seed].append(val_auc_fold)
         print(f'Train AUC for run {seed}: {np.mean(train_auc[seed]), np.std(train_auc[seed])}')

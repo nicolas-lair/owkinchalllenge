@@ -17,10 +17,6 @@ cuda = False
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_dir", type=Path,
                     help="directory where data is stored", default=Path().absolute())
-parser.add_argument("--num_runs", default=3, type=int,
-                    help="Number of runs for the cross validation")
-parser.add_argument("--num_splits", default=5, type=int,
-                    help="Number of splits for the cross validation")
 parser.add_argument("--batch_size", default=10, type=int,
                     help="Batch size")
 parser.add_argument("--n_model", default=10, type=int,
@@ -48,7 +44,7 @@ def get_model_and_optimizers(**kwargs):
     return model, optimizers
 
 
-def train_on_one_epoch(model, train_dataset, optimizer, batch_size, dataloader=custom_dataloader):
+def train_on_one_epoch(model, train_dataset, optimizer, batch_size, dataloader=custom_dataloader, verbose=True):
     """
     Train the ensemble model on one epoch by training each submodel separately.
     Different batches are used for each model
@@ -72,10 +68,11 @@ def train_on_one_epoch(model, train_dataset, optimizer, batch_size, dataloader=c
             loss.backward()
             optim_.step()
             losses.append(loss.detach())
-        print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
+        if verbose:
+            print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
 
 
-def eval_model(model, val_dataset, name='validation', dataloader=custom_dataloader):
+def eval_model(model, val_dataset, name='validation', dataloader=custom_dataloader, verbose=True):
     """
     Evaluate the performance of the model on a dataset
     :param model: EnsembleModel
@@ -93,20 +90,22 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
         predictions.append(val_pred)
     predictions, labels = torch.cat(predictions).cpu().numpy(), torch.cat(labels).cpu().numpy()
     auc_score = roc_auc_score(y_true=labels, y_score=predictions)
-    print(f'{name} AUC: {auc_score}')
+    if verbose:
+        print(f'{name} AUC: {auc_score}')
     model.train()
     return auc_score
 
 
-def train(model, train_dataset, val_dataset, optimizers, args, train_loader=custom_dataloader, val_loader=custom_dataloader):
+def train(model, train_dataset, val_dataset, optimizers, args, train_loader=custom_dataloader, val_loader=custom_dataloader,
+          verbose=dict(train=True, eval=True)):
     train_auc, val_auc = {}, {}
     for e in range(args.epoch):
         print('-' * 5 + f' Epoch {e} ' + '-' * 5)
         print('-- Training')
         train_on_one_epoch(model, train_dataset, optimizers, batch_size=args.batch_size)
         print('-- Evaluation of Chowder')
-        train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader)
-        val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader)
+        train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader, verbose=verbose['train'])
+        val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader, verbose=verbose['eval'])
     return train_auc, val_auc
 
 
