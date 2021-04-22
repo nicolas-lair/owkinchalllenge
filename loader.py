@@ -3,7 +3,7 @@ from functools import partial
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
-from torch.nn.utils.rnn import pad_sequence
+from torch.nn.utils.rnn import pack_sequence, pad_sequence, pack_padded_sequence
 
 
 class ResNetFeaturesDataset(Dataset):
@@ -12,8 +12,9 @@ class ResNetFeaturesDataset(Dataset):
     def __init__(self, filenames, labels=None):
         self.ids = {f.stem: f for f in filenames}
         if labels is None:
-            labels = -torch.ones(len(self.ids))
-        self.labels = torch.tensor(labels)
+            self.labels = -torch.ones(len(self.ids))
+        else:
+            self.labels = torch.tensor(labels)
 
     def __len__(self):
         return len(self.ids)

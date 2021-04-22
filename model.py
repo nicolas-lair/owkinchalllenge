@@ -35,15 +35,18 @@ class ChowderModel(nn.Module):
         super().__init__()
         self.projector = nn.Sequential(
             nn.Linear(in_features=2048, out_features=1, bias=False),
-            nn.ReLU(),
+            # nn.ReLU(),
         )
         self.minmax = MinMaxLayer(R=R)
 
         self.mlp = nn.Sequential(
+            # nn.Dropout(0.5),
             nn.Linear(2 * R, 200),
             nn.Sigmoid(),
+            nn.Dropout(0.5),
             nn.Linear(200, 100),
             nn.Sigmoid(),
+            nn.Dropout(0.5),
             nn.Linear(100, 1),
             nn.Sigmoid()
         )
