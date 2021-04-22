@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils.rnn import pad_packed_sequence
 
 
 class MinMaxLayer(nn.Module):
@@ -11,19 +12,50 @@ class MinMaxLayer(nn.Module):
         super().__init__()
         self.pooling = nn.AdaptiveMaxPool1d(output_size=R)
 
+    def forward(self, inputs, lengths=None):
+        if lengths is not None:
+            inputs = [inputs[i][:lengths[i]].unsqueeze(0).unsqueeze(0) for i in range(len(lengths))]
+            neg_inputs = [(-1) * x for x in inputs]
+            output = []
+            for input_, neg_ in zip(inputs, neg_inputs):
+                top_instance = self.pooling(input_).squeeze()
+                neg_instance = (-1) * self.pooling(neg_).squeeze()
+                output.append(torch.cat([top_instance, neg_instance]).sort().values)
+            return torch.stack(output, dim=0)
+        else:
+            raise NotImplementedError
+
+
+class WeldonModel(nn.Module):
+    def __init__(self, R=10):
+        super().__init__()
+        self.projector = nn.Sequential(
+            nn.Linear(in_features=2048, out_features=1, bias=False),
+            # nn.ReLU(),
+        )
+        self.minmax = MinMaxLayer(R=R)
+
+    def compute_features(self, inputs):
+        x, lengths = pad_packed_sequence(inputs, batch_first=True)
+        x = self.projector(x).squeeze()
+        x = self.minmax(x, lengths=lengths)
+        return x
+
+    def aggregate_func(self, inputs):
+        x = inputs.sum(dim=1)
+        x = torch.sigmoid(x)
+        return x
+
     def forward(self, inputs):
-        inputs = inputs.permute(0, 2, 1)
-        neg_input = (-1) * inputs
-        top_instances = torch.sort(self.pooling(inputs), descending=True)[0]
-        neg_evidence = (-1) * torch.sort(self.pooling(neg_input))[0]
-        output = torch.cat((top_instances, neg_evidence), dim=-1)
-        return output.squeeze()
+        x = self.compute_features(inputs)
+        output = self.aggregate_func(x)
+        return output
 
 
-class ChowderModel(nn.Module):
+class ChowderModel(WeldonModel):
     """
     Define a Chowder model based on the paper
-    CLASSIFICATION AND D ISEASE L OCALIZATION IN HISTOPATHOLOGY USING ONLY GLOBAL LABELS : A WEAKLY-SUPERVISED APPROACH
+    CLASSIFICATION AND DISEASE LOCALIZATION IN HISTOPATHOLOGY USING ONLY GLOBAL LABELS : A WEAKLY-SUPERVISED APPROACH
     https://arxiv.org/pdf/1802.02212.pdf
     """
 
@@ -32,13 +64,7 @@ class ChowderModel(nn.Module):
 
         :param R: Number of min and max value to keep for a slide in the minmax layer
         """
-        super().__init__()
-        self.projector = nn.Sequential(
-            nn.Linear(in_features=2048, out_features=1, bias=False),
-            # nn.ReLU(),
-        )
-        self.minmax = MinMaxLayer(R=R)
-
+        super().__init__(R=R)
         self.mlp = nn.Sequential(
             # nn.Dropout(0.5),
             nn.Linear(2 * R, 200),
@@ -51,26 +77,24 @@ class ChowderModel(nn.Module):
             nn.Sigmoid()
         )
 
-    def forward(self, inputs):
-        x = self.projector(inputs)
-        x = self.minmax(x)
-        x = self.mlp(x)
+    def aggregate_func(self, inputs):
+        x = self.mlp(inputs)
         return x.squeeze()
 
 
-class EnsembleChowder(nn.Module):
+class EnsembleModel(nn.Module):
     """
     Ensemble model containing a list of E Chowder models
     """
 
-    def __init__(self, E=10, R=5):
+    def __init__(self, model_type, E=10, R=5):
         """
 
         :param E: Number of chowder models
         :param R: init params for ChowderModel
         """
         super().__init__()
-        self.model_list = nn.ModuleList(ChowderModel(R=R) for _ in range(E))
+        self.model_list = nn.ModuleList(model_type(R=R) for _ in range(E))
 
     def forward(self, inputs):
         """
@@ -88,7 +112,7 @@ class EnsembleChowder(nn.Module):
         """
         Returns the average of the predictions of the different Chowder models.
         Useful for inference
-        :param inputs:  tensor of dimension (N, 1000, 2048)
+        :param inputs: tensor of dimension (N, 1000, 2048)
         :return: tensor of dimension (N, 1)
         """
-        return self(inputs).mean(dim=-1)
+        return self(inputs).mean(dim=1)

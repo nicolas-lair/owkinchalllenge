@@ -9,7 +9,7 @@ from sklearn.metrics import roc_auc_score
 
 from baseline import get_params
 from loader import ResNetFeaturesDataset, custom_dataloader
-from model import EnsembleChowder, ChowderModel
+from model import EnsembleModel, ChowderModel, WeldonModel
 
 cuda = torch.cuda.is_available()
 cuda = False
@@ -30,50 +30,77 @@ parser.add_argument("--R", default=5, type=int,
 parser.add_argument("--epoch", default=30, type=int,
                     help="Number of epochs to train")
 
+weldon = False
+
+def get_model_and_optimizers(**kwargs):
+    model = EnsembleModel(**kwargs)
+    if cuda:
+        model.cuda()
+    optimizers = [optim.Adam(m.parameters(), lr=0.001) for m in model.model_list]
+    return model, optimizers
+
 
 def train_on_one_epoch(model, train_dataset, optimizer):
     for model_, optim_ in zip(model.model_list, optimizer):
         optim_.zero_grad()
         train_loader = custom_dataloader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
         losses = []
-        for i_batch, sample_batched in enumerate(train_loader):
+        for _, sample_batched in enumerate(train_loader):
             features, labels = sample_batched
             if cuda:
                 features, labels = features.cuda(), labels.cuda()
             predictions = model_(features)
             loss = loss_fn(predictions, labels.float())
             loss += torch.norm(torch.cat([x.view(-1) for x in model_.projector.parameters()]), 2)
-            losses.append(loss)
             loss.backward()
             optim_.step()
+            losses.append(loss.detach())
         print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
 
 
-def eval_model(model, val_dataset):
+def eval_model(model, val_dataset, name='validation'):
     model.eval()
-    val_loader = custom_dataloader(dataset=val_dataset, batch_size=len(val_dataset), shuffle=False, num_workers=4)
-    val_features, val_labels = next(val_loader._get_iterator())
-    val_predictions = model.predict(val_features)
-    auc_score = roc_auc_score(val_labels.cpu().numpy(), val_predictions.detach().cpu().numpy())
-    print(f'validation AUC: {auc_score}')
+    val_loader = custom_dataloader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=4)
+    predictions, labels = [], []
+    for _, sample_batched in enumerate(val_loader):
+        val_features, val_labels = sample_batched
+        labels.append(val_labels)
+        val_pred = model.predict(val_features).detach()
+        predictions.append(val_pred)
+    predictions, labels = torch.cat(predictions).cpu().numpy(), torch.cat(labels).cpu().numpy()
+    auc_score = roc_auc_score(y_true=labels, y_score=predictions)
+    print(f'{name} AUC: {auc_score}')
     model.train()
+
 
 if __name__ == '__main__':
     args = parser.parse_args()
     filenames_train, filenames_test, labels_train, ids_test = get_params(args)
     TrainDataset = ResNetFeaturesDataset(filenames=filenames_train, labels=labels_train)
-    TestDataset = ResNetFeaturesDataset(filenames=filenames_test)
+    # TestDataset = ResNetFeaturesDataset(filenames=filenames_test)
     train_dataset, val_dataset = random_split(TrainDataset, lengths=[int(0.8 * len(TrainDataset)),
                                                                      len(TrainDataset) - int(
                                                                          0.8 * len(TrainDataset))])
 
-    model = EnsembleChowder(E=args.n_model, R=args.R)
-    if cuda:
-        model.cuda()
-    optimizer = [optim.Adam(m.parameters(), lr=0.001) for m in model.model_list]
+    chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model, R=args.R)
+    if weldon:
+        weldon_model, weldon_optimizers = get_model_and_optimizers(model_type=WeldonModel, E=args.n_model, R=args.R)
     loss_fn = nn.BCELoss()
 
     for e in range(args.epoch):
         print('-' * 5 + f' Epoch {e} ' + '-' * 5)
-        train_on_one_epoch(model, train_dataset, optimizer)
-        eval_model(model, val_dataset)
+
+        print('-- Training')
+        print('---- Chowder')
+        train_on_one_epoch(chowder_model, train_dataset, chowder_optimizers)
+        if weldon:
+            print('---- Weldon')
+            train_on_one_epoch(weldon_model, train_dataset, weldon_optimizers)
+
+        print('-- Evaluation of Chowder')
+        eval_model(chowder_model, train_dataset, name='train')
+        eval_model(chowder_model, val_dataset, name='validation')
+        if weldon:
+            print('-- Evaluation of Weldon')
+            eval_model(weldon_model, train_dataset, name='train')
+            eval_model(weldon_model, val_dataset, name='validation')
