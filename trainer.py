@@ -53,7 +53,7 @@ def eval_model(model, val_dataset):
     model.eval()
     val_loader = custom_dataloader(dataset=val_dataset, batch_size=len(val_dataset), shuffle=False, num_workers=4)
     val_features, val_labels = next(val_loader._get_iterator())
-    val_predictions = model(val_features)
+    val_predictions = model.predict(val_features)
     auc_score = roc_auc_score(val_labels.cpu().numpy(), val_predictions.detach().cpu().numpy())
     print(f'validation AUC: {auc_score}')
     model.train()
