@@ -30,8 +30,6 @@ parser.add_argument("--R", default=5, type=int,
 parser.add_argument("--epoch", default=30, type=int,
                     help="Number of epochs to train")
 
-weldon = False
-
 
 def get_model_and_optimizers(**kwargs):
     """
@@ -50,7 +48,7 @@ def get_model_and_optimizers(**kwargs):
     return model, optimizers
 
 
-def train_on_one_epoch(model, train_dataset, optimizer):
+def train_on_one_epoch(model, train_dataset, optimizer, batch_size, dataloader=custom_dataloader):
     """
     Train the ensemble model on one epoch by training each submodel separately.
     Different batches are used for each model
@@ -59,9 +57,10 @@ def train_on_one_epoch(model, train_dataset, optimizer):
     :param optimizer: list of optimizers, one for each submodel
     :return: nothing, print the mean loss for each submodel
     """
+    loss_fn = nn.BCELoss()
     for model_, optim_ in zip(model.model_list, optimizer):
         optim_.zero_grad()
-        train_loader = custom_dataloader(dataset=train_dataset, batch_size=args.batch_size, shuffle=True, num_workers=4)
+        train_loader = dataloader(dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
         losses = []
         for _, sample_batched in enumerate(train_loader):
             features, labels = sample_batched
@@ -76,16 +75,16 @@ def train_on_one_epoch(model, train_dataset, optimizer):
         print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
 
 
-def eval_model(model, val_dataset, name='validation'):
+def eval_model(model, val_dataset, name='validation', dataloader=custom_dataloader):
     """
     Evaluate the performance of the model on a dataset
     :param model: EnsembleModel
     :param val_dataset: dataset containing the validation samples along with their labels
     :param name: name of the validation (train or validation), used to print the result
-    :return: nothing, print the AUC of the model on the dataset
+    :return: AUC of the model on the dataset
     """
     model.eval()
-    val_loader = custom_dataloader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=4)
+    val_loader = dataloader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=4)
     predictions, labels = [], []
     for _, sample_batched in enumerate(val_loader):
         val_features, val_labels = sample_batched
@@ -96,6 +95,19 @@ def eval_model(model, val_dataset, name='validation'):
     auc_score = roc_auc_score(y_true=labels, y_score=predictions)
     print(f'{name} AUC: {auc_score}')
     model.train()
+    return auc_score
+
+
+def train(model, train_dataset, val_dataset, optimizers, args, train_loader=custom_dataloader, val_loader=custom_dataloader):
+    train_auc, val_auc = {}, {}
+    for e in range(args.epoch):
+        print('-' * 5 + f' Epoch {e} ' + '-' * 5)
+        print('-- Training')
+        train_on_one_epoch(model, train_dataset, optimizers, batch_size=args.batch_size)
+        print('-- Evaluation of Chowder')
+        train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader)
+        val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader)
+    return train_auc, val_auc
 
 
 if __name__ == '__main__':
@@ -110,25 +122,6 @@ if __name__ == '__main__':
 
     # Create the models
     chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model, R=args.R)
-    if weldon:
-        weldon_model, weldon_optimizers = get_model_and_optimizers(model_type=WeldonModel, E=args.n_model, R=args.R)
 
-    loss_fn = nn.BCELoss()
-
-    for e in range(args.epoch):
-        print('-' * 5 + f' Epoch {e} ' + '-' * 5)
-
-        print('-- Training')
-        print('---- Chowder')
-        train_on_one_epoch(chowder_model, train_dataset, chowder_optimizers)
-        if weldon:
-            print('---- Weldon')
-            train_on_one_epoch(weldon_model, train_dataset, weldon_optimizers)
-
-        print('-- Evaluation of Chowder')
-        eval_model(chowder_model, train_dataset, name='train')
-        eval_model(chowder_model, val_dataset, name='validation')
-        if weldon:
-            print('-- Evaluation of Weldon')
-            eval_model(weldon_model, train_dataset, name='train')
-            eval_model(weldon_model, val_dataset, name='validation')
+    # Train
+    train(chowder_model, train_dataset, val_dataset, chowder_optimizers, args=args)

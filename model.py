@@ -21,7 +21,7 @@ class MinMaxLayer(nn.Module):
         """
         if lengths is not None:
             # Split the batch and remove the padded values
-            inputs = [inputs[i][:lengths[i]].unsqueeze(0).unsqueeze(0) for i in range(len(lengths))]
+            inputs = [inputs[i][:lengths[i]].unsqueeze(0).unsqueeze(0) for i, length_ in enumerate(lengths)]
             neg_inputs = [(-1) * x for x in inputs]
             output = []
 
@@ -113,7 +113,6 @@ class EnsembleModel(nn.Module):
         :param E: Number of chowder models
         :param R: init params for ChowderModel
         """
-        assert isinstance(model_type, WeldonModel)
         super().__init__()
         self.model_list = nn.ModuleList(model_type(R=R) for _ in range(E))
 
