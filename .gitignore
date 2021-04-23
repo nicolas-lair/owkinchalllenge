@@ -131,6 +131,6 @@ dmypy.json
 *.npy
 *.pdf
 *.csv
-*/.DS_STORE
+*/.DS_Store
 
 *.idea
