@@ -86,13 +86,13 @@ class ChowderModel(WeldonModel):
         """
         super().__init__(R=R)
         self.mlp = nn.Sequential(
-            # nn.Dropout(0.5),
+            nn.Dropout(0.1),
             nn.Linear(2 * R, 200),
             nn.Sigmoid(),
-            # nn.Dropout(0.5),
+            nn.Dropout(0.2),
             nn.Linear(200, 100),
             nn.Sigmoid(),
-            # nn.Dropout(0.5),
+            nn.Dropout(0.2),
             nn.Linear(100, 1),
             nn.Sigmoid()
         )
