@@ -80,6 +80,8 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
     :param name: name of the validation (train or validation), used to print the result
     :return: AUC of the model on the dataset
     """
+    if verbose:
+        print(f"Evaluation on {name}")
     model.eval()
     val_loader = dataloader(dataset=val_dataset, batch_size=10, shuffle=False, num_workers=4)
     predictions, labels = [], []
@@ -96,16 +98,20 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
     return auc_score
 
 
-def train(model, train_dataset, val_dataset, optimizers, args, train_loader=custom_dataloader, val_loader=custom_dataloader,
+def train(model, train_dataset, optimizers, args, val_dataset=None, compute_train_auc=True,
+          train_loader=custom_dataloader, val_loader=custom_dataloader,
           verbose=dict(train=True, eval=True)):
     train_auc, val_auc = {}, {}
     for e in range(args.epoch):
         print('-' * 5 + f' Epoch {e} ' + '-' * 5)
         print('-- Training')
-        train_on_one_epoch(model, train_dataset, optimizers, batch_size=args.batch_size)
-        print('-- Evaluation of Chowder')
-        train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader, verbose=verbose['train'])
-        val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader, verbose=verbose['eval'])
+        train_on_one_epoch(model, train_dataset, optimizers, batch_size=args.batch_size, verbose=verbose['train'])
+        if compute_train_auc:
+            train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader,
+                                      verbose=verbose['eval'])
+        if val_dataset is not None:
+            val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader,
+                                    verbose=verbose['eval'])
     return train_auc, val_auc
 
 
@@ -123,4 +129,4 @@ if __name__ == '__main__':
     chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model, R=args.R)
 
     # Train
-    train(chowder_model, train_dataset, val_dataset, chowder_optimizers, args=args)
+    train(chowder_model, train_dataset, chowder_optimizers, val_dataset=val_dataset, args=args)

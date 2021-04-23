@@ -10,6 +10,10 @@ class ResNetFeaturesDataset(Dataset):
     """ResNet features dataset."""
 
     def __init__(self, filenames, labels=None):
+        """
+        :param filenames: list of the path to the ResNet Features files
+        :param labels: list of labels associated with the features (in the same order)
+        """
         self.filenames = filenames
         if labels is None:
             # Useful for test dataset

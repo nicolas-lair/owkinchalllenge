@@ -10,10 +10,10 @@ from sklearn.model_selection import StratifiedKFold
 from utils import get_params
 from model import ChowderModel
 from loader import ResNetFeaturesDataset, custom_dataloader
-from trainer import train, get_model_and_optimizers
+from trainer import train, get_model_and_optimizers, eval_model
 
 cuda = torch.cuda.is_available()
-cuda = False
+# cuda = False
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--data_dir", type=Path,
@@ -43,8 +43,8 @@ if __name__ == '__main__':
         train_auc[seed], val_auc[seed] = [], []
 
         kfold = StratifiedKFold(n_splits=args.num_splits, shuffle=True, random_state=seed)
-        for fold, (train_index, test_index) in enumerate(kfold.split(TrainDataset, labels_train)):
-            print(f'Fold: {fold}')
+        for fold, (train_index, test_index) in enumerate(kfold.split(TrainDataset, TrainDataset.labels.numpy())):
+            print(f'---- Seed, {seed}, Fold: {fold}')
             # Sample elements randomly from a list of index
             train_subsampler = torch.utils.data.SubsetRandomSampler(train_index)
             test_subsampler = torch.utils.data.SubsetRandomSampler(test_index)
@@ -56,19 +56,17 @@ if __name__ == '__main__':
             chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model,
                                                                          R=args.R)
 
-            train_auc_fold, val_auc_fold = train(model=chowder_model,
-                                                 train_dataset=TrainDataset,
-                                                 val_dataset=TrainDataset,
-                                                 optimizers=chowder_optimizers,
-                                                 train_loader=train_loader,
-                                                 val_loader=test_loader,
-                                                 args=args,
-                                                 verbose=verbose)
+            train(model=chowder_model,
+                  train_dataset=TrainDataset,
+                  optimizers=chowder_optimizers,
+                  train_loader=train_loader,
+                  args=args,
+                  verbose=verbose,
+                  compute_train_auc=False)
+            train_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=train_loader, name='train set')
+            val_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=test_loader, name='validation set')
             train_auc[seed].append(train_auc_fold)
             val_auc[seed].append(val_auc_fold)
-        print(f'Train AUC for run {seed}: {np.mean(train_auc[seed]), np.std(train_auc[seed])}')
-        print(f'Val AUC for run {seed}: { np.mean(val_auc[seed]), np.std(val_auc[seed])}')
-    print(f'Average train AUC: {np.mean(list(train_auc.values())), np.std([np.mean(auc) for auc in train_auc.values()])}')
+    print(
+        f'Average train AUC: {np.mean(list(train_auc.values())), np.std([np.mean(auc) for auc in train_auc.values()])}')
     print(f'Average val AUC: {np.mean(list(val_auc.values())), np.std([np.mean(auc) for auc in val_auc.values()])}')
-
-
