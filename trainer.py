@@ -56,7 +56,10 @@ def train_on_one_epoch(model, train_dataset, optimizer, batch_size, dataloader=c
     loss_fn = nn.BCELoss()
     for model_, optim_ in zip(model.model_list, optimizer):
         optim_.zero_grad()
-        train_loader = dataloader(dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        try:
+            train_loader = dataloader(dataset=train_dataset, batch_size=batch_size, shuffle=True, num_workers=4)
+        except ValueError as e:
+            train_loader = dataloader(dataset=train_dataset, batch_size=batch_size, num_workers=4)
         losses = []
         for _, sample_batched in enumerate(train_loader):
             features, labels = sample_batched
@@ -98,23 +101,6 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
     return auc_score
 
 
-def train(model, train_dataset, optimizers, args, val_dataset=None, compute_train_auc=True,
-          train_loader=custom_dataloader, val_loader=custom_dataloader,
-          verbose=dict(train=True, eval=True)):
-    train_auc, val_auc = {}, {}
-    for e in range(args.epoch):
-        print('-' * 5 + f' Epoch {e} ' + '-' * 5)
-        print('-- Training')
-        train_on_one_epoch(model, train_dataset, optimizers, batch_size=args.batch_size, verbose=verbose['train'])
-        if compute_train_auc:
-            train_auc[e] = eval_model(model, train_dataset, name='train', dataloader=train_loader,
-                                      verbose=verbose['eval'])
-        if val_dataset is not None:
-            val_auc[e] = eval_model(model, val_dataset, name='validation', dataloader=val_loader,
-                                    verbose=verbose['eval'])
-    return train_auc, val_auc
-
-
 if __name__ == '__main__':
     # Prepare the simulation
     args = parser.parse_args()
@@ -129,4 +115,10 @@ if __name__ == '__main__':
     chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model, R=args.R)
 
     # Train
-    train(chowder_model, train_dataset, chowder_optimizers, val_dataset=val_dataset, args=args)
+    for e in range(args.epoch):
+        print('-' * 5 + f' Epoch {e} ' + '-' * 5)
+        print('-- Training')
+        train_on_one_epoch(chowder_model, train_dataset, chowder_optimizers, batch_size=args.batch_size)
+        print(' -- Evaluation')
+        eval_model(chowder_model, train_dataset, name='train set')
+        eval_model(chowder_model, val_dataset, name='validation set')

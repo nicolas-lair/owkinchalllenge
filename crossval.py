@@ -2,6 +2,7 @@ import argparse
 from functools import partial
 from pathlib import Path
 
+from tqdm import tqdm
 import numpy as np
 import torch
 from torch.utils.data import random_split
@@ -10,7 +11,7 @@ from sklearn.model_selection import StratifiedKFold
 from utils import get_params
 from model import ChowderModel
 from loader import ResNetFeaturesDataset, custom_dataloader
-from trainer import train, get_model_and_optimizers, eval_model
+from trainer import train_on_one_epoch, get_model_and_optimizers, eval_model
 
 cuda = torch.cuda.is_available()
 # cuda = False
@@ -55,16 +56,16 @@ if __name__ == '__main__':
 
             chowder_model, chowder_optimizers = get_model_and_optimizers(model_type=ChowderModel, E=args.n_model,
                                                                          R=args.R)
+            # Train the model on the train_index
+            for e in tqdm(range(args.epoch)):
+                train_on_one_epoch(chowder_model, TrainDataset, chowder_optimizers, batch_size=args.batch_size,
+                                   dataloader=train_loader, verbose=verbose['train'])
 
-            train(model=chowder_model,
-                  train_dataset=TrainDataset,
-                  optimizers=chowder_optimizers,
-                  train_loader=train_loader,
-                  args=args,
-                  verbose=verbose,
-                  compute_train_auc=False)
-            train_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=train_loader, name='train set')
-            val_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=test_loader, name='validation set')
+            # After training, compute AUC on the train and test index
+            train_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=train_loader,
+                                        name='train set')
+            val_auc_fold = eval_model(model=chowder_model, val_dataset=TrainDataset, dataloader=test_loader,
+                                      name='validation set')
             train_auc[seed].append(train_auc_fold)
             val_auc[seed].append(val_auc_fold)
     print(
