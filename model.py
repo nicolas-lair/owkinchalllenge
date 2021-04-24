@@ -4,6 +4,7 @@ from torch.nn.utils.rnn import pad_packed_sequence
 
 from config import baseCONFIG
 
+
 class MinMaxLayer(nn.Module):
     """
     MinMax layer returning the R max value and R min value
@@ -147,3 +148,29 @@ class EnsembleModel(nn.Module):
         # Replace model_list by the one provided
         model.model_list = nn.ModuleList(model_list)
         return model
+
+
+class DeepSetChowder(nn.Module):
+    def __init__(self, scaler_size):
+        super().__init__()
+        self.projector = nn.Sequential(
+            nn.Linear(in_features=2048, out_features=scaler_size),
+            nn.ReLU(),
+        )
+        self.mlp = nn.Sequential(
+            nn.Dropout(baseCONFIG.dropout[0]),
+            nn.Linear(scaler_size, 200),
+            nn.Sigmoid(),
+            nn.Dropout(baseCONFIG.dropout[1]),
+            nn.Linear(200, 100),
+            nn.Sigmoid(),
+            nn.Dropout(baseCONFIG.dropout[2]),
+            nn.Linear(100, 1),
+            nn.Sigmoid()
+        )
+
+    def forward(self, inputs):
+        x = self.projector(inputs)
+        x = torch.mean(x, dim=1)
+        x = self.mlp(x)
+        return x.squeeze()

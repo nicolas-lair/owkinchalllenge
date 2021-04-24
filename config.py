@@ -9,6 +9,7 @@ class baseCONFIG:
     batch_size = 10
     epoch = 30
     lr = 0.001
+    train_together = True
 
     # Regularization params
     dropout = [0, 0.25, 0.2]

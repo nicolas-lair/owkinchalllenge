@@ -7,7 +7,7 @@ import torch
 from torch.utils.data import random_split
 from sklearn.model_selection import StratifiedKFold
 
-from utils import get_params, get_model_and_optimizers, train_on_one_epoch, eval_model
+from utils import get_params, get_model_and_optimizer, train_on_one_epoch, eval_model
 from loader import ResNetFeaturesDataset, custom_dataloader
 from config import Chowder_CONFIG, multiR_CONFIG
 
@@ -35,10 +35,11 @@ if __name__ == '__main__':
             train_loader = partial(custom_dataloader, sampler=train_subsampler)
             test_loader = partial(custom_dataloader, sampler=test_subsampler)
 
-            model, optimizers = get_model_and_optimizers(mtype=config.mtype, model_params=config.model_params)
+            model, optimizers = get_model_and_optimizer(mtype=config.mtype, model_params=config.model_params)
             # Train the model on the train_index
             for e in tqdm(range(config.epoch)):
-                train_on_one_epoch(model, TrainDataset, optimizers, dataloader=train_loader, verbose=verbose['train'])
+                train_on_one_epoch(model=model, train_dataset=TrainDataset, optimizer=optimizers,
+                                   dataloader=train_loader, verbose=verbose['train'])
                 # Eval on the validation set after each epoch of training
                 val_auc[seed][fold].append(eval_model(model=model, val_dataset=TrainDataset, dataloader=test_loader,
                                                       name='validation set', verbose=False))

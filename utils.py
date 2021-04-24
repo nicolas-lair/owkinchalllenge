@@ -54,6 +54,9 @@ def get_params(args):
 
 
 def get_model(mtype, **kwargs):
+    """
+    Create the model depending on the current params
+    """
     if mtype == 'normal':
         model = EnsembleModel(**kwargs)
     elif mtype == 'multi_r':
@@ -64,9 +67,25 @@ def get_model(mtype, **kwargs):
     return model
 
 
-def get_model_and_optimizers(mtype, model_params):
+def get_optimizer(model, train_together=baseCONFIG.train_together):
     """
-    Create model and optimizers
+    Build the pytorch optimizer based on the current params
+    """
+    if train_together:
+        optimizer = optim.Adam(sum([[{'params': m.projector.parameters(), 'weight_decay': baseCONFIG.l2_penalty},
+                                     {'params': m.mlp.parameters()}] for m in model.model_list], []),
+                               lr=baseCONFIG.lr)
+    else:
+        optimizer = [optim.Adam([{'params': m.projector.parameters(), 'weight_decay': baseCONFIG.l2_penalty},
+                                 {'params': m.mlp.parameters()}
+                                 ],
+                                lr=baseCONFIG.lr) for m in model.model_list]
+    return optimizer
+
+
+def get_model_and_optimizer(mtype, model_params):
+    """
+    Create model and optimizer
     :param mtype: model type : normal or multi_r
     :param cuda: boolean, use GPU
     :param l2_penalty: float, weight og the l2_penalty (0: None)
@@ -76,20 +95,27 @@ def get_model_and_optimizers(mtype, model_params):
     model = get_model(mtype=mtype, **model_params)
     if baseCONFIG.cuda:
         model.cuda()
-    optimizers = [optim.Adam([{'params': m.projector.parameters(), 'weight_decay': baseCONFIG.l2_penalty},
-                              {'params': m.mlp.parameters()}
-                              ],
-                             lr=baseCONFIG.lr) for m in model.model_list]
-    return model, optimizers
+    optimizer = get_optimizer(model, train_together=baseCONFIG.train_together)
+    return model, optimizer
 
 
-def train_on_one_epoch(model, train_dataset, optimizer, dataloader=custom_dataloader, verbose=True):
+def train_on_one_epoch(**kwargs):
+    """
+    Wrapper function that train the model for one epoch
+    """
+    if baseCONFIG.train_together:
+        train_full_model_on_one_epoch(**kwargs)
+    else:
+        train_each_model_on_one_epoch(**kwargs)
+
+
+def train_each_model_on_one_epoch(model, train_dataset, optimizer, dataloader=custom_dataloader, verbose=True):
     """
     Train the ensemble model on one epoch by training each submodel separately.
     Different batches are used for each model
     :param model: EnsembleModel
     :param train_dataset: dataset containing the training samples and their labels
-    :param optimizer: list of optimizers, one for each submodel
+    :param optimizer: list of optimizer, one for each submodel
     :param batch_size: int
     :param dataloader: pytorch dataloader to be used
     :param verbose: boolean, print mean loss on epoch
@@ -115,6 +141,38 @@ def train_on_one_epoch(model, train_dataset, optimizer, dataloader=custom_datalo
             losses.append(loss.detach())
         if verbose:
             print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
+
+
+def train_full_model_on_one_epoch(model, train_dataset, optimizer, dataloader=custom_dataloader, verbose=True):
+    """
+    Train the ensemble model on one epoch by training the ensemble model at once.
+    :param model: EnsembleModel
+    :param train_dataset: dataset containing the training samples and their labels
+    :param optimizer: pytorch optimizer
+    :param batch_size: int
+    :param dataloader: pytorch dataloader to be used
+    :param verbose: boolean, print mean loss on epoch
+    :param cuda: boolean, use gpu for computation
+    :return: nothing, print the mean loss for each submodel
+    """
+    loss_fn = nn.BCELoss()
+    try:
+        train_loader = dataloader(dataset=train_dataset, batch_size=baseCONFIG.batch_size, shuffle=True, num_workers=4)
+    except ValueError:
+        train_loader = dataloader(dataset=train_dataset, batch_size=baseCONFIG.batch_size, num_workers=4)
+    optimizer.zero_grad()
+    losses = []
+    for _, sample_batched in enumerate(train_loader):
+        features, labels = sample_batched
+        if baseCONFIG.cuda:
+            features, labels = features.cuda(), labels.cuda()
+        predictions = model.predict(features)
+        loss = loss_fn(predictions, labels.float())
+        loss.backward()
+        optimizer.step()
+        losses.append(loss.detach())
+    if verbose:
+        print(f'mean loss on epoch : {torch.mean(torch.tensor(losses).cpu())}')
 
 
 def eval_model(model, val_dataset, name='validation', dataloader=custom_dataloader, verbose=True):
@@ -149,6 +207,9 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
 
 
 def eval_on_test(model, dataset):
+    """
+    Compute the predictions of the model on dataset
+    """
     test_loader = custom_dataloader(dataset=dataset, batch_size=10, shuffle=False, num_workers=4)
     predictions = []
     for _, (features, _) in enumerate(test_loader):
