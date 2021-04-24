@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 from torch.nn.utils.rnn import pad_packed_sequence
 
+from config import baseCONFIG
 
 class MinMaxLayer(nn.Module):
     """
@@ -31,7 +32,7 @@ class MinMaxLayer(nn.Module):
                 neg_instance = (-1) * self.pooling(neg_).squeeze()
 
                 # Concat, sort and store the top instance and neg evidenve
-                output.append(torch.cat([top_instance, neg_instance]).sort().values)
+                output.append(torch.cat([top_instance.view(-1), neg_instance.view(-1)]).sort().values)
             return torch.stack(output, dim=0)
         else:
             raise NotImplementedError
@@ -45,6 +46,7 @@ class WeldonModel(nn.Module):
 
     It serves as parent class for the chowder model
     """
+
     def __init__(self, R=10):
         super().__init__()
         self.projector = nn.Sequential(
@@ -86,13 +88,13 @@ class ChowderModel(WeldonModel):
         """
         super().__init__(R=R)
         self.mlp = nn.Sequential(
-            nn.Dropout(0.1),
+            nn.Dropout(baseCONFIG.dropout[0]),
             nn.Linear(2 * R, 200),
             nn.Sigmoid(),
-            nn.Dropout(0.2),
+            nn.Dropout(baseCONFIG.dropout[1]),
             nn.Linear(200, 100),
             nn.Sigmoid(),
-            nn.Dropout(0.2),
+            nn.Dropout(baseCONFIG.dropout[2]),
             nn.Linear(100, 1),
             nn.Sigmoid()
         )
@@ -107,7 +109,7 @@ class EnsembleModel(nn.Module):
     Ensemble model containing a list of E models (Weldon or Chowder)
     """
 
-    def __init__(self, model_type, E=10, R=5):
+    def __init__(self, model_type=ChowderModel, E=10, R=5):
         """
 
         :param E: Number of chowder models
@@ -136,3 +138,12 @@ class EnsembleModel(nn.Module):
         :return: tensor of dimension (N, 1)
         """
         return self(inputs).mean(dim=1)
+
+    @classmethod
+    def from_model_list(cls, model_list):
+        # Dumb initialization
+        model = cls(ChowderModel)
+
+        # Replace model_list by the one provided
+        model.model_list = nn.ModuleList(model_list)
+        return model
