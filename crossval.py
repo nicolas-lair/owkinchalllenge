@@ -16,7 +16,6 @@ config = Chowder_CONFIG
 verbose = dict(train=False, eval=True)
 
 if __name__ == '__main__':
-    print(Chowder_CONFIG)
     # Prepare the simulation
     filenames_train, filenames_test, labels_train, ids_test = get_params(config)
     TrainDataset = ResNetFeaturesDataset(filenames=filenames_train, labels=labels_train)

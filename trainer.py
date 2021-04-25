@@ -22,22 +22,23 @@ if __name__ == '__main__':
     model, optimizer = get_model_and_optimizer(mtype=config.mtype, model_params=config.model_params)
 
     # Train
-    max_val_auc = 0
+    train_auc = []
+    val_auc = []
+    predictions = dict()
     for e in range(config.epoch):
         print('-' * 5 + f' Epoch {e} ' + '-' * 5)
         print('-- Training')
         train_on_one_epoch(model=model, train_dataset=train_dataset, optimizer=optimizer)
         print(' -- Evaluation')
-        eval_model(model, train_dataset, name='train set')
-        val_auc = eval_model(model, val_dataset, name='validation set')
+        train_auc.append(eval_model(model, train_dataset, name='train set'))
+        val_auc.append(eval_model(model, val_dataset, name='validation set'))
 
-        if compute_test and val_auc > max_val_auc:
+        if compute_test:
             # Compute predictions on the test set
             print('-- Computing the predictions on the test set')
             TestDataset = ResNetFeaturesDataset(filenames=filenames_test)
-            predictions = eval_on_test(model=model, dataset=TestDataset)
-            max_val_auc = val_auc
+            predictions[e] = eval_on_test(model=model, dataset=TestDataset)
 
-    if compute_test:
-        print(f'Predictions on the test were computed for AUC on val of {max_val_auc}')
-        save_test_predictions(ids_test=ids_test, predictions=predictions, data_dir=config.data_dir)
+    # if compute_test:
+    #     print(f'Predictions on the test were computed for AUC on val of {max_val_auc}')
+    #     save_test_predictions(ids_test=ids_test, predictions=predictions, data_dir=config.data_dir)

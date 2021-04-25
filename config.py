@@ -62,4 +62,4 @@ class multiR_CONFIG(baseCONFIG):
 
 class DeepSet_CONFIG(baseCONFIG):
     mtype = 'deepset'
-    model_params = dict(scaler_size=32)
+    model_params = dict(scaler_size=256)
