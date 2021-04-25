@@ -4,7 +4,7 @@ from sklearn.metrics import roc_auc_score
 from torch import optim as optim, nn as nn
 
 from loader import custom_dataloader
-from model import EnsembleModel, ChowderModel
+from model import EnsembleModel, ChowderModel, DeepSetChowder
 from config import baseCONFIG
 
 
@@ -62,6 +62,8 @@ def get_model(mtype, **kwargs):
     elif mtype == 'multi_r':
         model_list = [ChowderModel(r) for r in kwargs['R_list']]
         model = EnsembleModel.from_model_list(model_list)
+    elif mtype == "deepset":
+        model = EnsembleModel(model_type=DeepSetChowder, **kwargs)
     else:
         raise NotImplementedError
     return model
@@ -94,7 +96,7 @@ def get_model_and_optimizer(mtype, model_params):
     """
     model = get_model(mtype=mtype, **model_params)
     if baseCONFIG.cuda:
-        model.cuda()
+        model.to(baseCONFIG.device)
     optimizer = get_optimizer(model, train_together=baseCONFIG.train_together)
     return model, optimizer
 
@@ -122,6 +124,7 @@ def train_each_model_on_one_epoch(model, train_dataset, optimizer, dataloader=cu
     :param cuda: boolean, use gpu for computation
     :return: nothing, print the mean loss for each submodel
     """
+    model.train()
     loss_fn = nn.BCELoss()
     try:
         train_loader = dataloader(dataset=train_dataset, batch_size=baseCONFIG.batch_size, shuffle=True, num_workers=4)
@@ -133,7 +136,7 @@ def train_each_model_on_one_epoch(model, train_dataset, optimizer, dataloader=cu
         for _, sample_batched in enumerate(train_loader):
             features, labels = sample_batched
             if baseCONFIG.cuda:
-                features, labels = features.cuda(), labels.cuda()
+                features, labels = features.to(baseCONFIG.device), labels.to(baseCONFIG.device)
             predictions = model_(features)
             loss = loss_fn(predictions, labels.float())
             loss.backward()
@@ -155,6 +158,7 @@ def train_full_model_on_one_epoch(model, train_dataset, optimizer, dataloader=cu
     :param cuda: boolean, use gpu for computation
     :return: nothing, print the mean loss for each submodel
     """
+    model.train()
     loss_fn = nn.BCELoss()
     try:
         train_loader = dataloader(dataset=train_dataset, batch_size=baseCONFIG.batch_size, shuffle=True, num_workers=4)
@@ -165,7 +169,7 @@ def train_full_model_on_one_epoch(model, train_dataset, optimizer, dataloader=cu
     for _, sample_batched in enumerate(train_loader):
         features, labels = sample_batched
         if baseCONFIG.cuda:
-            features, labels = features.cuda(), labels.cuda()
+            features, labels = features.to(baseCONFIG.device), labels.to(baseCONFIG.device)
         predictions = model.predict(features)
         loss = loss_fn(predictions, labels.float())
         loss.backward()
@@ -195,14 +199,13 @@ def eval_model(model, val_dataset, name='validation', dataloader=custom_dataload
         val_features, val_labels = sample_batched
         labels.append(val_labels)
         if baseCONFIG.cuda:
-            val_features = val_features.cuda()
+            val_features = val_features.to(baseCONFIG.device)
         val_pred = model.predict(val_features).detach()
         predictions.append(val_pred)
     predictions, labels = torch.cat(predictions).cpu().numpy(), torch.cat(labels).cpu().numpy()
     auc_score = roc_auc_score(y_true=labels, y_score=predictions)
     if verbose:
         print(f'{name} AUC: {auc_score}')
-    model.train()
     return auc_score
 
 
@@ -210,11 +213,12 @@ def eval_on_test(model, dataset):
     """
     Compute the predictions of the model on dataset
     """
+    model.eval()
     test_loader = custom_dataloader(dataset=dataset, batch_size=10, shuffle=False, num_workers=4)
     predictions = []
     for _, (features, _) in enumerate(test_loader):
         if baseCONFIG.cuda:
-            features = features.cuda()
+            features = features.to(baseCONFIG.device)
         predictions.append(model.predict(features).detach())
     predictions = torch.cat(predictions).cpu().numpy()
     return predictions

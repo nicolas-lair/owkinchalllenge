@@ -39,6 +39,27 @@ class MinMaxLayer(nn.Module):
             raise NotImplementedError
 
 
+class MLP(nn.Module):
+    def __init__(self, in_features):
+        super().__init__()
+        self.mlp = nn.Sequential(
+            nn.Dropout(baseCONFIG.dropout[0]),
+            nn.Linear(in_features, 200),
+            nn.Sigmoid(),
+            nn.Dropout(baseCONFIG.dropout[1]),
+            nn.Linear(200, 100),
+            nn.Sigmoid(),
+            nn.Dropout(baseCONFIG.dropout[2]),
+            nn.Linear(100, 1),
+            nn.Sigmoid()
+        )
+        if baseCONFIG.batchnorm:
+            self.mlp = nn.Sequential(nn.BatchNorm1d(num_features=in_features), self.mlp)
+
+    def forward(self, inputs):
+        return self.mlp(inputs)
+
+
 class WeldonModel(nn.Module):
     """
     This implements the WeldonModel as describes in the paper :
@@ -88,17 +109,7 @@ class ChowderModel(WeldonModel):
         :param R: Number of min and max value to keep for a slide in the minmax layer
         """
         super().__init__(R=R)
-        self.mlp = nn.Sequential(
-            nn.Dropout(baseCONFIG.dropout[0]),
-            nn.Linear(2 * R, 200),
-            nn.Sigmoid(),
-            nn.Dropout(baseCONFIG.dropout[1]),
-            nn.Linear(200, 100),
-            nn.Sigmoid(),
-            nn.Dropout(baseCONFIG.dropout[2]),
-            nn.Linear(100, 1),
-            nn.Sigmoid()
-        )
+        self.mlp = MLP(in_features=2 * R)
 
     def aggregate_func(self, inputs):
         x = self.mlp(inputs)
@@ -110,14 +121,14 @@ class EnsembleModel(nn.Module):
     Ensemble model containing a list of E models (Weldon or Chowder)
     """
 
-    def __init__(self, model_type=ChowderModel, E=10, R=5):
+    def __init__(self, model_type=ChowderModel, E=10, **kwargs):
         """
 
         :param E: Number of chowder models
         :param R: init params for ChowderModel
         """
         super().__init__()
-        self.model_list = nn.ModuleList(model_type(R=R) for _ in range(E))
+        self.model_list = nn.ModuleList(model_type(**kwargs) for _ in range(E))
 
     def forward(self, inputs):
         """
@@ -157,20 +168,13 @@ class DeepSetChowder(nn.Module):
             nn.Linear(in_features=2048, out_features=scaler_size),
             nn.ReLU(),
         )
-        self.mlp = nn.Sequential(
-            nn.Dropout(baseCONFIG.dropout[0]),
-            nn.Linear(scaler_size, 200),
-            nn.Sigmoid(),
-            nn.Dropout(baseCONFIG.dropout[1]),
-            nn.Linear(200, 100),
-            nn.Sigmoid(),
-            nn.Dropout(baseCONFIG.dropout[2]),
-            nn.Linear(100, 1),
-            nn.Sigmoid()
-        )
+        self.mlp = MLP(in_features=scaler_size)
 
     def forward(self, inputs):
-        x = self.projector(inputs)
-        x = torch.mean(x, dim=1)
+        x, lengths = pad_packed_sequence(inputs, batch_first=True)
+        x = self.projector(x)
+        x = torch.sum(x, dim=1)
+        x = x.permute(1, 0) / lengths.to(x.device)
+        x = x.permute(1, 0)
         x = self.mlp(x)
         return x.squeeze()
