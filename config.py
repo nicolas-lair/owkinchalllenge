@@ -15,16 +15,24 @@ class baseCONFIG:
     train_together = True
 
     # Regularization params
-    dropout = [0, 0.5, 0.5]
-    l2_penalty = 0.5
-    # dropout = [0, 0, 0]
-    # l2_penalty = 0
     batchnorm = True
+    regularization = 'light'
+    if regularization == 'no':
+        dropout = [0, 0, 0]
+        l2_penalty = 0
+    elif regularization == 'light':
+        dropout = [0, 0.25, 0.25]
+        l2_penalty = 0.3
+    elif regularization == 'normal':
+        dropout = [0, 0.5, 0.5]
+        l2_penalty = 0.5
+    else:
+        raise NotImplementedError
 
     # Cuda
     cuda = torch.cuda.is_available()
     if cuda:
-        device = 'cuda:3'
+        device = 'cuda:2'
 
     # Cross val params
     num_runs = 3
@@ -32,15 +40,16 @@ class baseCONFIG:
 
     def __repr__(self):
         import inspect
-        attributes = inspect.getmembers(baseCONFIG, lambda a: not (inspect.isroutine(a)))
-        print([a for a in attributes if not(a[0].startswith('__') and a[0].endswith('__'))])
+        attributes = inspect.getmembers(self, lambda a: not (inspect.isroutine(a)))
+        print([a for a in attributes if not (a[0].startswith('__') and a[0].endswith('__'))])
+
 
 class Chowder_CONFIG(baseCONFIG):
     """
     Config for Chowder model as presented in the paper
     """
     mtype = 'normal'
-    model_params = dict(E=1, R=5)
+    model_params = dict(E=10, R=5)
 
 
 class multiR_CONFIG(baseCONFIG):
