@@ -40,7 +40,7 @@ class MinMaxLayer(nn.Module):
 
 
 class MLP(nn.Module):
-    def __init__(self, in_features):
+    def __init__(self, in_features, use_batch_norm=baseCONFIG.batchnorm):
         super().__init__()
         self.mlp = nn.Sequential(
             nn.Dropout(baseCONFIG.dropout[0]),
@@ -53,7 +53,7 @@ class MLP(nn.Module):
             nn.Linear(100, 1),
             nn.Sigmoid()
         )
-        if baseCONFIG.batchnorm:
+        if use_batch_norm:
             self.mlp = nn.Sequential(nn.BatchNorm1d(num_features=in_features), self.mlp)
 
     def forward(self, inputs):
@@ -168,10 +168,16 @@ class DeepSetChowder(nn.Module):
             nn.Linear(in_features=2048, out_features=scaler_size),
             nn.ReLU(),
         )
-        self.mlp = MLP(in_features=scaler_size)
+        if baseCONFIG.batchnorm:
+            self.batchnorm = nn.BatchNorm1d(num_features=2048)
+        else:
+            self.batchnorm = None
+        self.mlp = MLP(in_features=scaler_size, use_batch_norm=False)
 
     def forward(self, inputs):
         x, lengths = pad_packed_sequence(inputs, batch_first=True)
+        if self.batchnorm is not None:
+            x = self.batchnorm(x.permute(0, 2, 1)).permute(0, 2, 1)
         x = self.projector(x)
         x = torch.sum(x, dim=1)
         x = x.permute(1, 0) / lengths.to(x.device)
